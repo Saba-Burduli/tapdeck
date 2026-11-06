@@ -35,6 +35,7 @@ pkill -f "TapDeck.app/Contents/MacOS/TapDeck" 2>/dev/null || true
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin" "$app/Contents/MacOS/TapDeck"
+cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"   # regenerate: scripts/make-icon.sh
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -44,6 +45,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>TapDeck</string>
   <key>CFBundleDisplayName</key><string>TapDeck</string>
   <key>CFBundleExecutable</key><string>TapDeck</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${version#v}</string>
   <key>CFBundleVersion</key><string>$(git rev-list --count HEAD 2>/dev/null || echo 1)</string>
