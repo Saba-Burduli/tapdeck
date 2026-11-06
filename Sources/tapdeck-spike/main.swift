@@ -1,10 +1,10 @@
 // TapDeck spike: a terminal harness for the touch pipeline.
 //   (default)    raw mode: finger-count changes + per-touch duration/travel
 //   --debug      also print a per-second frame/state heartbeat
-//   --gestures   run the GestureRecognizer with a demo set of bindings
+//   --gestures   run the GestureRecognizer and perform a demo set of real actions
 //   --record     like --gestures, but every gesture counts as bound (multi-taps always wait)
 //   --calibrate  measure your taps and holds, fit thresholds, then run --gestures with them
-import AppKit
+import Actions
 import Foundation
 import Recognizer
 import TouchInput
@@ -17,25 +17,16 @@ let calibrate = args.contains("--calibrate")
 let recordMode = args.contains("--record")
 let gestureMode = recordMode || calibrate || args.contains("--gestures")
 
-/// The one binding that really runs, so the demo is visible.
-let demoApp = (label: "Toggle Calculator", bundleID: "com.apple.calculator")
-
-/// Opens the app, or hides it if it's already in front.
-@MainActor func toggle(bundleID: String) {
-    if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first, app.isActive {
-        app.hide()
-    } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-        NSWorkspace.shared.openApplication(at: url, configuration: .init())
-    }
-}
-
-let demoBindings: [Gesture: String] = [
-    .tap(fingers: 3, count: 2): demoApp.label,
-    .tap(fingers: 4, count: 1): "Mission Control",
-    .tap(fingers: 5, count: 1): "Play/Pause",
-    .hold(fingers: 3): "Show desktop",
-    .cornerTap(.topRight): "Notification Center",
+/// Demo bindings: every one of these really runs.
+let demoBindings: [Gesture: Action] = [
+    .tap(fingers: 3, count: 2): .openApp(bundleID: "com.apple.calculator"),
+    .tap(fingers: 4, count: 1): .window(.leftHalf),
+    .tap(fingers: 4, count: 2): .window(.rightHalf),
+    .tap(fingers: 5, count: 1): .media(.playPause),
+    .hold(fingers: 3): .keystroke(.missionControl),
+    .cornerTap(.topRight): .keystroke(.spotlight),
 ]
+let runner = ActionRunner()
 
 /// All mutable state; touched from the multitouch thread and the main run loop.
 final class State: @unchecked Sendable {
@@ -45,7 +36,8 @@ final class State: @unchecked Sendable {
     var start: [Int: Double] = [:]
     var peak: [Int: Int] = [:]
     var origin: [Int: [Int32: SIMD2<Float>]] = [:]
-    var travel: [Int: Float] = [:]
+    var travel: [Int: Float] = [:]      // worst single finger
+    var medTravel: [Int: Float] = [:]   // median finger (what the recognizer uses)
     var clicked: [Int: Bool] = [:]
     var clickAt: [Int: Double] = [:]   // ms after the contact started
     var lastEnd: [Int: Double] = [:]   // frame time the previous contact ended
@@ -74,9 +66,11 @@ final class State: @unchecked Sendable {
             let lag = (frameNow - e.time) * 1000
             let action = demoBindings[e.gesture].map { "-> \($0)" } ?? "(unbound)"
             print(String(format: "  %@  %@   [%.1f ms]", e.gesture.description, action, lag))
-            if demoBindings[e.gesture] == demoApp.label {
-                // Real action for this demo only; the ActionRunner arrives in milestone 3.
-                DispatchQueue.main.async { toggle(bundleID: demoApp.bundleID) }
+            guard let a = demoBindings[e.gesture] else { continue }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    do { try runner.run(a) } catch { print("      ! \(error)") }
+                }
             }
         }
     }
@@ -86,7 +80,8 @@ final class State: @unchecked Sendable {
         let fingers = peak[d] ?? 0, moved = travel[d] ?? 0, didClick = clicked[d] ?? false
         let clickNote = didClick ? String(format: ", clicked at %.0f ms", clickAt[d] ?? -1) : ""
         let gapNote = lastGap[d].map { String(format: ", %.0f ms after previous touch", $0 * 1000) } ?? ""
-        print(String(format: "    · touch: %.0f ms, %d fingers, travel %.3f%@%@", duration * 1000, fingers, moved, clickNote, gapNote))
+        print(String(format: "    · touch: %.0f ms, %d fingers, travel %.3f (worst finger %.3f)%@%@",
+                     duration * 1000, fingers, medTravel[d] ?? 0, moved, clickNote, gapNote))
         guard phase == .taps, fingers >= 2 else { return }
         guard !didClick, duration < 1.0 else {
             print("      (skipped: \(didClick ? "it clicked" : "too long for a tap"); tap lightly)")
@@ -133,17 +128,27 @@ do {
         let down = frame.touches.filter(\.state.isDown)
         let prev = s.lastCount[d] ?? 0
         if prev == 0, !down.isEmpty {
-            s.start[d] = frame.timestamp; s.peak[d] = 0; s.travel[d] = 0; s.origin[d] = [:]; s.clicked[d] = false
+            s.start[d] = frame.timestamp; s.peak[d] = 0; s.travel[d] = 0; s.medTravel[d] = 0; s.origin[d] = [:]; s.clicked[d] = false
             s.lastGap[d] = s.lastEnd[d].map { frame.timestamp - $0 }
         }
+        var dists: [Float] = []
         for t in down {
             let p = SIMD2(t.x, t.y)
             if let o = s.origin[d]?[t.id] {
                 let v = p - o
-                s.travel[d] = max(s.travel[d] ?? 0, (v * v).sum().squareRoot())
+                let dist = (v * v).sum().squareRoot()
+                dists.append(dist)
+                s.travel[d] = max(s.travel[d] ?? 0, dist)
             } else {
                 s.origin[d, default: [:]][t.id] = p
+                dists.append(0)
             }
+        }
+        dists.sort()
+        if !dists.isEmpty {
+            let m = dists.count / 2
+            let med = dists.count.isMultiple(of: 2) ? (dists[m - 1] + dists[m]) / 2 : dists[m]
+            s.medTravel[d] = max(s.medTravel[d] ?? 0, med)
         }
         guard down.count != prev else { return }
         s.lastCount[d] = down.count
@@ -185,6 +190,18 @@ if gestureMode {
     } catch {
         print("Warning: \(error). Click gestures disabled.")
     }
+    // Only show the system prompt when asked (--prompt); otherwise it pops up on every launch.
+    let trusted = args.contains("--prompt") ? Permissions.requestAccessibility() : Permissions.isAccessibilityTrusted
+    if !trusted {
+        print("""
+
+        ⚠️  Keystrokes, window moves and media keys need Accessibility permission.
+            macOS should now show a prompt; or open System Settings > Privacy & Security >
+            Accessibility and turn on TapDeck (or the app running this terminal), then restart.
+            (Opening apps works without it.)
+
+        """)
+    }
     if calibrate {
         print("\nCalibration: TAP lightly with 3 fingers, 5 times. Don't press until it clicks.")
     } else {
@@ -195,7 +212,15 @@ if gestureMode {
 // Debug heartbeat: proves whether frames arrive at all, and which states we see.
 let heartbeat = DispatchSource.makeTimerSource(queue: .main)
 heartbeat.schedule(deadline: .now() + 1, repeating: 1)
+nonisolated(unsafe) var lastTrusted: Bool?
 heartbeat.setEventHandler {
+    // Live permission status, so granting it in System Settings shows up here.
+    let trusted = Permissions.isAccessibilityTrusted
+    if gestureMode, trusted != lastTrusted {
+        print(trusted ? "✅ Accessibility: ON — keystrokes, windows and media keys will work."
+                      : "⛔️ Accessibility: OFF for this build of TapDeck.")
+        lastTrusted = trusted
+    }
     guard debug else { return }
     s.lock.lock(); defer { s.lock.unlock() }
     if s.frames > 0 { print("  [debug] frames=\(s.frames) states=\(s.states.sorted { $0.key < $1.key })") }
