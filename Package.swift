@@ -9,6 +9,7 @@ let package = Package(
         .library(name: "Recognizer", targets: ["Recognizer"]),
         .library(name: "Actions", targets: ["Actions"]),
         .library(name: "Config", targets: ["Config"]),
+        .executable(name: "TapDeck", targets: ["TapDeck"]),
         .executable(name: "tapdeck-spike", targets: ["tapdeck-spike"]),
     ],
     targets: [
@@ -28,5 +29,7 @@ let package = Package(
         .testTarget(name: "ConfigTests", dependencies: ["Config"]),
         // Runtime pipeline: trackpad + clicks -> recognizer -> actions.
         .target(name: "Engine", dependencies: ["TouchInput", "Recognizer", "Actions", "Config"]),
+        // The menu bar app (bundled by scripts/build-app.sh).
+        .executableTarget(name: "TapDeck", dependencies: ["Engine", "Config", "Actions", "Recognizer", "TouchInput"]),
     ]
 )
