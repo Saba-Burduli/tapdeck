@@ -7,6 +7,8 @@ struct GlassCard<Content: View>: View {
     var padding: CGFloat = 16
     var radius: CGFloat = Theme.radiusM
     var tint: Color = .clear
+    /// When set, honey floods the card from its top-trailing corner while true and drains while false.
+    var flood: Bool?
     @ViewBuilder var content: Content
 
     @State private var hover: CGPoint?
@@ -20,8 +22,21 @@ struct GlassCard<Content: View>: View {
                 let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
                 ZStack {
                     shape.fill(.ultraThinMaterial)
-                    shape.fill(Theme.warmWhite.opacity(0.72))
+                    shape.fill(Theme.warmWhite.opacity(0.8))
                     shape.fill(tint)
+                    if let flood {
+                        GeometryReader { geo in
+                            let d = 2.2 * hypot(geo.size.width, geo.size.height)
+                            Circle()
+                                .fill(RadialGradient(colors: [Theme.butter.opacity(0.42), Theme.butter.opacity(0.14)],
+                                                     center: .center, startRadius: 0, endRadius: d / 2))
+                                .frame(width: d, height: d)
+                                .position(x: geo.size.width - 40, y: 28)
+                                .scaleEffect(flood ? 1 : 0.001, anchor: UnitPoint(x: (geo.size.width - 40) / geo.size.width, y: 28 / geo.size.height))
+                                .animation(.spring(response: 0.7, dampingFraction: 0.8), value: flood)
+                        }
+                        .clipShape(shape)
+                    }
                     if let hover, !reduceMotion {
                         shape.fill(RadialGradient(colors: [.white.opacity(0.75), .clear],
                                                   center: .init(x: 0, y: 0), startRadius: 0, endRadius: 220))
