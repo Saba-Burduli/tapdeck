@@ -1,7 +1,9 @@
 // Icon lab: ten TapDeck icon directions in a white + yellow palette.
 //
 //   swift scripts/icon-lab.swift <out-dir>
+//   swift scripts/icon-lab.swift --render Ripple <out.png> [size]
 //
+// The shipping icon is "Ripple" (chosen from these ten); see scripts/make-icon.sh.
 // Writes <out-dir>/<n>-<name>.png (1024 px) for each design plus
 // <out-dir>/contact-sheet.png comparing them side by side.
 import CoreGraphics
@@ -241,7 +243,18 @@ func text(_ ctx: CGContext, _ s: String, at p: CGPoint, size: CGFloat, weight: C
     CTFrameDraw(frame, ctx)
 }
 
-let out = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "icon-options"
+// Single-design mode, used by scripts/make-icon.sh for the shipping icon:
+//   swift scripts/icon-lab.swift --render <name> <out.png> [size]
+let args = CommandLine.arguments
+if args.count >= 4, args[1] == "--render" {
+    guard let d = designs.first(where: { $0.name.lowercased() == args[2].lowercased() }) else {
+        print("unknown design '\(args[2])'; choose from: \(designs.map(\.name).joined(separator: ", "))"); exit(2)
+    }
+    write(render(d, size: args.count > 4 ? Int(args[4])! : 1024), args[3])
+    exit(0)
+}
+
+let out = args.count > 1 ? args[1] : "icon-options"
 try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
 
 let cols = 5, cell: CGFloat = 420, iconSize: CGFloat = 300, labelH: CGFloat = 120

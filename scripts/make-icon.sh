@@ -1,6 +1,9 @@
 #!/bin/zsh
-# Regenerates Resources/AppIcon.icns and docs/icon.png from scripts/make-icon.swift.
+# Regenerates Resources/AppIcon.icns and docs/icon.png from a design in
+# scripts/icon-lab.swift. The shipping design is "Ripple"; pass another name to try one.
+#   scripts/make-icon.sh [design]
 set -euo pipefail
+design=${1:-Ripple}
 cd "${0:A:h}/.."
 
 tmp=$(mktemp -d)
@@ -8,7 +11,7 @@ trap 'rm -rf "$tmp"' EXIT
 set=$tmp/AppIcon.iconset
 mkdir -p "$set"
 
-swift scripts/make-icon.swift "$tmp/master.png" 1024
+swift scripts/icon-lab.swift --render "$design" "$tmp/master.png" 1024
 for size in 16 32 128 256 512; do
   sips -z $size $size "$tmp/master.png" --out "$set/icon_${size}x${size}.png" >/dev/null
   double=$((size * 2))

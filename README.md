@@ -123,7 +123,7 @@ Trackpad ─▶ TouchInput ─▶ Recognizer ─▶ Engine ─▶ Actions
 
 Push a version tag, for example `git tag v0.1.0 && git push origin v0.1.0`. The release workflow then tests and builds the DMG and creates a **draft** GitHub release for you to review and publish. To package locally, run `scripts/package-release.sh`.
 
-To sign and notarize, add these repository secrets: `DEVELOPER_ID_P12` (your base64 `.p12`), `DEVELOPER_ID_P12_PASSWORD`, `SIGN_IDENTITY` (`Developer ID Application: Name (TEAMID)`), `APPLE_ID`, `APPLE_TEAM_ID` and `APPLE_APP_PASSWORD`. Without them, releases are ad-hoc signed. A Homebrew cask template is in `packaging/homebrew/tapdeck.rb`. To regenerate the app icon, run `scripts/make-icon.sh`.
+To sign and notarize, add these repository secrets: `DEVELOPER_ID_P12` (your base64 `.p12`), `DEVELOPER_ID_P12_PASSWORD`, `SIGN_IDENTITY` (`Developer ID Application: Name (TEAMID)`), `APPLE_ID`, `APPLE_TEAM_ID` and `APPLE_APP_PASSWORD`. Without them, releases are ad-hoc signed. A Homebrew cask template is in `packaging/homebrew/tapdeck.rb`. The app icon ("Ripple") is drawn in code in `scripts/icon-lab.swift` alongside nine alternative designs. Run `scripts/make-icon.sh` to regenerate it, or `swift scripts/icon-lab.swift <dir>` to render every design on a comparison sheet.
 </details>
 
 ## License
