@@ -33,6 +33,11 @@ public final class Engine {
         didSet { core.setWantsTouches(showsLiveTouches); if !showsLiveTouches { liveTouches = [] } }
     }
 
+    #if DEBUG
+    /// Feeds synthetic fingers to the visualizer, for screenshots without a real hand on the pad.
+    public func injectLiveTouches(_ touches: [Touch]) { liveTouches = touches }
+    #endif
+
     public var config: AppConfig {
         didSet { rearm() }
     }
@@ -198,9 +203,9 @@ final class Core: @unchecked Sendable {
             let events = r.process(frame)
             recognizers[frame.device] = r
             var live: [Touch]?
-            // Visualizer: at most ~30 updates per second, plus the final "all lifted" frame.
+            // Visualizer: at most ~60 updates per second, plus the final "all lifted" frame.
             let down = frame.touches.filter(\.state.isDown)
-            if wantsTouches, frame.timestamp - lastLiveSent > 1.0 / 30 || down.isEmpty {
+            if wantsTouches, frame.timestamp - lastLiveSent > 1.0 / 60 || down.isEmpty {
                 live = down
                 lastLiveSent = frame.timestamp
             }

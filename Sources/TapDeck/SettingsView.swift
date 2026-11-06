@@ -182,8 +182,6 @@ struct TrackpadTab: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { model.engine.showsLiveTouches = true }
-        .onDisappear { model.engine.showsLiveTouches = false }
     }
 }
 
