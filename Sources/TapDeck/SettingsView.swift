@@ -408,41 +408,86 @@ struct GeneralTab: View {
     @Bindable var model: AppModel
 
     var body: some View {
-        Form {
-            Section("Accessibility") {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                TabHeader(title: "General", subtitle: "Permissions, startup and what TapDeck is doing right now.")
+
                 if model.engine.accessibilityTrusted {
-                    Label("Granted. Keystrokes, window moves and media keys work.", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                    card("Accessibility", symbol: "checkmark.shield.fill") {
+                        Label("Granted. Keystrokes, window moves and media keys work.", systemImage: "checkmark.circle.fill")
+                            .font(Theme.label(13, weight: .medium))
+                            .foregroundStyle(Theme.success)
+                    }
                 } else {
                     PermissionBanner(model: model)
-                    DisclosureGroup("TapDeck is switched on in Settings but still not working?") {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("That entry belongs to an older build. Remove it by running this in Terminal, then click Request Access again:")
-                                .font(.callout)
-                            HStack {
-                                Text(Self.resetCommand).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
-                                Button("Copy") {
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString(Self.resetCommand, forType: .string)
+                    card("Still not working?", symbol: "questionmark.circle.fill") {
+                        DisclosureGroup("TapDeck is switched on in System Settings but keystrokes still don't work") {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("That entry belongs to an older build. Remove it by running this in Terminal, then click Request Access again:")
+                                    .font(Theme.label(12, weight: .regular)).foregroundStyle(Theme.inkMuted)
+                                HStack {
+                                    Text(Self.resetCommand)
+                                        .font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
+                                        .padding(.horizontal, 10).padding(.vertical, 6)
+                                        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.cream))
+                                    Button("Copy") {
+                                        Haptics.tap()
+                                        NSPasteboard.general.clearContents()
+                                        NSPasteboard.general.setString(Self.resetCommand, forType: .string)
+                                    }
+                                    .buttonStyle(PillButtonStyle(primary: false))
                                 }
                             }
+                            .padding(.top, 6)
                         }
-                        .padding(.top, 4)
+                        .font(Theme.label(12.5, weight: .medium))
+                    }
+                }
+
+                HStack(alignment: .top, spacing: 14) {
+                    card("Startup", symbol: "power") {
+                        Toggle(isOn: $model.launchAtLogin) { Text("Launch TapDeck at login").font(Theme.label(13)) }
+                            .toggleStyle(LiquidToggleStyle())
+                    }
+                    card("Trackpad", symbol: "rectangle.and.hand.point.up.left.fill") {
+                        HStack(spacing: 8) {
+                            if model.engine.isRunning {
+                                PulseDot(color: Theme.success)
+                                Text("Listening").font(Theme.label(13, weight: .semibold)).foregroundStyle(Theme.success)
+                            } else {
+                                Circle().fill(Theme.warning).frame(width: 7, height: 7)
+                                Text(model.engine.startError ?? "Stopped").font(Theme.label(13, weight: .semibold)).foregroundStyle(Theme.warning)
+                            }
+                        }
+                    }
+                }
+
+                card("About", symbol: "info.circle.fill") {
+                    HStack {
+                        Text("TapDeck \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")")
+                            .font(Theme.label(13, weight: .semibold))
+                        Spacer()
+                        Link(destination: URL(string: "https://github.com/Saba-Burduli/tapdeck")!) {
+                            Label("GitHub", systemImage: "arrow.up.right")
+                        }
+                        .buttonStyle(PillButtonStyle(primary: false))
                     }
                 }
             }
-            Section("Startup") {
-                Toggle("Launch TapDeck at login", isOn: $model.launchAtLogin)
-            }
-            Section("Trackpad") {
-                LabeledContent("Status", value: model.engine.isRunning ? "Listening" : (model.engine.startError ?? "Stopped"))
-            }
-            Section {
-                LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")
-                Link("TapDeck on GitHub", destination: URL(string: "https://github.com/Saba-Burduli/tapdeck")!)
+            .padding(.bottom, 8)
+        }
+        .scrollIndicators(.never)
+    }
+
+    private func card<Content: View>(_ title: String, symbol: String, @ViewBuilder content: () -> Content) -> some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Label(title, systemImage: symbol)
+                    .font(Theme.label(12, weight: .semibold))
+                    .foregroundStyle(Theme.inkMuted)
+                content()
             }
         }
-        .formStyle(.grouped)
     }
 
     static var resetCommand: String {
@@ -454,18 +499,21 @@ struct PermissionBanner: View {
     let model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("TapDeck needs Accessibility permission", systemImage: "exclamationmark.triangle.fill")
-                .font(.headline).foregroundStyle(.orange)
-            Text("Opening apps works without it. Keystrokes, window snapping and media keys need it.")
-                .font(.callout).foregroundStyle(.secondary)
-            HStack {
-                Button("Request Access") { Permissions.requestAccessibility(); model.engine.refreshPermissions() }
-                Button("Open System Settings") { Permissions.openAccessibilitySettings() }
+        GlassCard(tint: Theme.warning.opacity(0.08)) {
+            HStack(alignment: .top, spacing: 12) {
+                SymbolTile(symbol: "exclamationmark.triangle.fill", size: 38)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("TapDeck needs Accessibility permission").font(Theme.title(15))
+                    Text("Opening apps works without it. Keystrokes, window snapping and media keys need it.")
+                        .font(Theme.label(12.5, weight: .regular)).foregroundStyle(Theme.inkMuted)
+                    HStack {
+                        Button("Request Access") { Permissions.requestAccessibility(); model.engine.refreshPermissions() }
+                            .buttonStyle(PillButtonStyle())
+                        Button("Open System Settings") { Permissions.openAccessibilitySettings() }
+                            .buttonStyle(PillButtonStyle(primary: false))
+                    }
+                }
             }
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
     }
 }
