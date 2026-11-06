@@ -69,16 +69,7 @@ public struct GestureRecognizer: Sendable {
         guard var c = contact else { return out }
 
         c.peakFingers = max(c.peakFingers, down.count)
-        for t in down {
-            let p = SIMD2(t.x, t.y)
-            if c.firstPosition == nil { c.firstPosition = p }
-            if let o = c.origins[t.id] {
-                let d = p - o
-                c.travel = max(c.travel, (d * d).sum().squareRoot())
-            } else {
-                c.origins[t.id] = p
-            }
-        }
+        c.travel = max(c.travel, Self.updateTravel(&c, down: down))
 
         let elapsed = now - c.start
         if !c.disqualified, c.travel > config.maxTravel {
@@ -122,6 +113,35 @@ public struct GestureRecognizer: Sendable {
     }
 
     // MARK: - Private
+
+    /// How far the contact has moved this frame: the median finger's distance
+    /// from where it landed. In a swipe every finger moves; in a 4-5 finger tap
+    /// one finger (often the pinky, landing late or rolling off) can drift a lot,
+    /// and the median ignores it. Also forgets fingers that lifted, so a reused
+    /// touch id starts from its own landing point.
+    private static func updateTravel(_ c: inout Contact, down: [Touch]) -> Float {
+        let ids = Set(down.map(\.id))
+        c.origins = c.origins.filter { ids.contains($0.key) }
+        var distances: [Float] = []
+        for t in down {
+            let p = SIMD2(t.x, t.y)
+            if c.firstPosition == nil { c.firstPosition = p }
+            if let o = c.origins[t.id] {
+                let d = p - o
+                distances.append((d * d).sum().squareRoot())
+            } else {
+                c.origins[t.id] = p
+                distances.append(0)
+            }
+        }
+        return Self.median(distances)
+    }
+
+    static func median(_ xs: [Float]) -> Float {
+        guard !xs.isEmpty else { return 0 }
+        let s = xs.sorted(), m = s.count / 2
+        return s.count.isMultiple(of: 2) ? (s[m - 1] + s[m]) / 2 : s[m]
+    }
 
     private mutating func release(_ c: Contact, at now: Double) -> [GestureEvent] {
         if c.clicked {

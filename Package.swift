@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .library(name: "TouchInput", targets: ["TouchInput"]),
         .library(name: "Recognizer", targets: ["Recognizer"]),
+        .library(name: "Actions", targets: ["Actions"]),
         .executable(name: "tapdeck-spike", targets: ["tapdeck-spike"]),
     ],
     targets: [
@@ -16,7 +17,10 @@ let package = Package(
         .target(name: "TouchInput", dependencies: ["CMultitouch"]),
         // Pure gesture state machine: no OS calls, fully unit-testable.
         .target(name: "Recognizer", dependencies: ["TouchInput"]),
-        .executableTarget(name: "tapdeck-spike", dependencies: ["TouchInput", "Recognizer"]),
+        // What gestures trigger: apps, keystrokes, windows, media keys.
+        .target(name: "Actions"),
+        .executableTarget(name: "tapdeck-spike", dependencies: ["TouchInput", "Recognizer", "Actions"]),
         .testTarget(name: "RecognizerTests", dependencies: ["Recognizer"]),
+        .testTarget(name: "ActionsTests", dependencies: ["Actions"]),
     ]
 )

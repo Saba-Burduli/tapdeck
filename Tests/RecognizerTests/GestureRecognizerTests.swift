@@ -15,7 +15,7 @@ struct Pad {
     mutating func touch(
         fingers n: Int, duration: Double, at origin: SIMD2<Float> = [0.3, 0.3],
         stagger: Double = 0.01, move: SIMD2<Float> = .zero, flicker: Bool = false,
-        clickAfter: Double? = nil
+        clickAfter: Double? = nil, outlier: SIMD2<Float> = .zero
     ) {
         let start = now, end = now + duration
         if let c = clickAfter { clicks.append(start + c) }
@@ -29,7 +29,8 @@ struct Pad {
                 guard t >= down, t < up else { continue }
                 if flicker, !flickered, i == 1, t > start + duration / 2 { flickered = true; continue }
                 let progress = Float((t - start) / duration)
-                let p = origin + SIMD2(Float(i) * 0.15, 0) + move * progress
+                // `outlier` drifts only the last finger (a pinky landing late or rolling off).
+                let p = origin + SIMD2(Float(i) * 0.15, 0) + move * progress + (i == n - 1 ? outlier * progress : .zero)
                 touches.append(Touch(id: Int32(i + 1), state: .touching, x: p.x, y: p.y, vx: 0, vy: 0, size: 1))
             }
             frames.append(TouchFrame(device: 0, timestamp: t, touches: touches))
@@ -165,6 +166,30 @@ func gestures(_ events: [GestureEvent]) -> [Gesture] { events.map(\.gesture) }
         var r = GestureRecognizer(bound: nil)
         var pad = Pad()
         pad.touch(fingers: 3, duration: 0.4)
+        #expect(pad.run(&r).isEmpty)
+    }
+
+    @Test(arguments: [4, 5])
+    func oneDriftingFingerDoesNotSpoilAManyFingerTap(fingers: Int) {
+        // Real 4-finger taps on the user's pad: 120-176 ms with max-finger travel 0.13-0.18.
+        var r = GestureRecognizer(bound: [])
+        var pad = Pad()
+        pad.touch(fingers: fingers, duration: 0.2, at: [0.1, 0.3], stagger: 0.015, outlier: [0.0, 0.18])
+        #expect(gestures(pad.run(&r)) == [.tap(fingers: fingers, count: 1)])
+    }
+
+    @Test func fourFingerSwipeIsStillIgnored() {
+        var r = GestureRecognizer(bound: nil)
+        var pad = Pad()
+        pad.touch(fingers: 4, duration: 0.2, at: [0.1, 0.3], move: [0, 0.15])
+        #expect(pad.run(&r).isEmpty)
+    }
+
+    @Test func twoFingersWhereOneMovesIsNotATap() {
+        // With two fingers the median is their average, so one moving finger still counts.
+        var r = GestureRecognizer(bound: nil)
+        var pad = Pad()
+        pad.touch(fingers: 2, duration: 0.15, outlier: [0.1, 0])
         #expect(pad.run(&r).isEmpty)
     }
 
