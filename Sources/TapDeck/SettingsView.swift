@@ -11,7 +11,9 @@ struct SettingsView: View {
     var body: some View {
         ZStack(alignment: .top) {
             Theme.milk.ignoresSafeArea()
-            FluidLayer(touches: model.engine.liveTouches, fired: model.engine.lastFired?.date)
+            // On the Trackpad tab the pad shows the fingers; the window keeps only its ambient colour.
+            FluidLayer(touches: model.selectedTab == .trackpad ? [] : model.engine.liveTouches,
+                       fired: model.selectedTab == .trackpad ? nil : model.engine.lastFired?.date)
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
@@ -193,40 +195,128 @@ struct Shake: ViewModifier {
 
 struct SensitivityTab: View {
     @Bindable var model: AppModel
+    @State private var focus: SensitivityPreview.Focus?
 
     var body: some View {
-        Form {
-            Section {
-                slider("Longest tap", value: $model.config.recognizer.maxTapDuration, range: 0.1...1.0, ms: true,
-                       help: "Touches shorter than this count as taps. Presses that click always count.")
-                slider("Hold after", value: $model.config.recognizer.holdDuration, range: 0.5...3.0, ms: true,
-                       help: "Keep fingers still this long for a hold.")
-                slider("Time between taps", value: $model.config.recognizer.multiTapInterval, range: 0.1...0.6, ms: true,
-                       help: "Max gap for double and triple taps. Shorter = single taps fire sooner.")
-                slider("Allowed movement", value: Double.binding($model.config.recognizer.maxTravel), range: 0.01...0.08, ms: false,
-                       help: "How far fingers may move (fraction of the pad) before it's a swipe, not a tap.")
-                slider("Corner size", value: Double.binding($model.config.recognizer.cornerSize), range: 0.05...0.3, ms: false,
-                       help: "Size of each corner zone for corner taps.")
-            } footer: {
-                HStack {
-                    Spacer()
-                    Button("Reset to Defaults") { model.config.recognizer = RecognizerConfig() }
+        HStack(alignment: .top, spacing: 18) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    TabHeader(title: "Sensitivity", subtitle: "How TapDeck tells taps, holds and corners apart. The preview shows each setting as you drag it.")
+                    GlassCard {
+                        VStack(spacing: 20) {
+                            row("Longest tap", .tap, value: $model.config.recognizer.maxTapDuration, range: 0.1...1.0, ms: true,
+                                help: "Touches shorter than this count as taps. Presses that click always count.")
+                            row("Time between taps", .gap, value: $model.config.recognizer.multiTapInterval, range: 0.1...0.6, ms: true,
+                                help: "Max gap for double and triple taps. Shorter = single taps fire sooner.")
+                            row("Hold after", .hold, value: $model.config.recognizer.holdDuration, range: 0.5...3.0, ms: true,
+                                help: "Keep fingers still this long for a hold.")
+                            row("Allowed movement", .travel, value: Double.binding($model.config.recognizer.maxTravel), range: 0.01...0.08, ms: false,
+                                help: "How far fingers may move (fraction of the pad) before it's a swipe, not a tap.")
+                            row("Corner size", .corner, value: Double.binding($model.config.recognizer.cornerSize), range: 0.05...0.3, ms: false,
+                                help: "Size of each corner zone for corner taps.")
+                        }
+                    }
+                    HStack {
+                        Spacer()
+                        Button {
+                            Haptics.tap()
+                            withAnimation(Theme.wobble) { model.config.recognizer = RecognizerConfig() }
+                        } label: { Label("Reset to Defaults", systemImage: "arrow.counterclockwise") }
+                        .buttonStyle(PillButtonStyle(primary: false))
+                    }
+                }
+                .padding(.bottom, 8)
+            }
+            .scrollIndicators(.never)
+            SensitivityPreview(config: model.config.recognizer, focus: focus)
+                .frame(width: 250)
+        }
+    }
+
+    private func row(_ title: String, _ id: SensitivityPreview.Focus, value: SwiftUI.Binding<Double>, range: ClosedRange<Double>,
+                     ms: Bool, help: String) -> some View {
+        let format: (Double) -> String = { ms ? "\(Int($0 * 1000)) ms" : String(format: "%.0f%%", $0 * 100) }
+        let tracked = SwiftUI.Binding<Double>(get: { value.wrappedValue },
+                                              set: { value.wrappedValue = $0; if focus != id { withAnimation(Theme.snappy) { focus = id } } })
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title).font(Theme.label(13, weight: .semibold))
+                Spacer()
+                Text(format(value.wrappedValue))
+                    .font(Theme.label(12, weight: .semibold)).monospacedDigit()
+                    .foregroundStyle(focus == id ? Theme.ink : Theme.inkMuted)
+                    .contentTransition(.numericText())
+            }
+            LiquidSlider(value: tracked, range: range, format: format)
+            Text(help).font(Theme.label(11.5, weight: .regular)).foregroundStyle(Theme.inkMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// A small pad and timeline that draw the current recognizer settings to scale.
+struct SensitivityPreview: View {
+    enum Focus { case tap, gap, hold, travel, corner }
+
+    var config: RecognizerConfig
+    var focus: Focus?
+
+    var body: some View {
+        GlassCard(padding: 14) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Preview").font(Theme.label(12, weight: .semibold)).foregroundStyle(Theme.inkMuted)
+                pad
+                VStack(alignment: .leading, spacing: 9) {
+                    bar("Tap", seconds: config.maxTapDuration, highlighted: focus == .tap)
+                    bar("Gap", seconds: config.multiTapInterval, highlighted: focus == .gap)
+                    bar("Hold", seconds: config.holdDuration, highlighted: focus == .hold)
+                    HStack {
+                        Text("0s"); Spacer(); Text("1.5s"); Spacer(); Text("3s")
+                    }
+                    .font(Theme.label(9.5, weight: .medium)).foregroundStyle(Theme.inkMuted)
                 }
             }
         }
-        .formStyle(.grouped)
+        .animation(Theme.wobble, value: config)
     }
 
-    private func slider(_ title: String, value: SwiftUI.Binding<Double>, range: ClosedRange<Double>, ms: Bool, help: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(title)
-                Spacer()
-                Text(ms ? "\(Int(value.wrappedValue * 1000)) ms" : String(format: "%.0f%%", value.wrappedValue * 100))
-                    .monospacedDigit().foregroundStyle(.secondary)
+    private var pad: some View {
+        GeometryReader { geo in
+            let w = geo.size.width, h = geo.size.height
+            let cw = w * CGFloat(config.cornerSize), ch = h * CGFloat(config.cornerSize)
+            let travel = max(3, w * CGFloat(config.maxTravel))
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.cream)
+                ForEach(0..<4) { i in
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Theme.butter.opacity(focus == .corner ? 0.85 : 0.45))
+                        .frame(width: cw, height: ch)
+                        .position(x: i % 2 == 0 ? cw / 2 : w - cw / 2, y: i < 2 ? ch / 2 : h - ch / 2)
+                }
+                Circle()
+                    .fill(Theme.honey.opacity(focus == .travel ? 0.3 : 0.15))
+                    .overlay(Circle().strokeBorder(Theme.honey, style: StrokeStyle(lineWidth: 1.5, dash: [3, 3])))
+                    .frame(width: travel * 2 + 14, height: travel * 2 + 14)
+                Circle().fill(.white).frame(width: 14, height: 14)
+                    .shadow(color: Theme.honey.opacity(0.6), radius: 6)
             }
-            Slider(value: value, in: range)
-            Text(help).font(.caption).foregroundStyle(.secondary)
+        }
+        .aspectRatio(1.6, contentMode: .fit)
+    }
+
+    private func bar(_ label: String, seconds: Double, highlighted: Bool) -> some View {
+        HStack(spacing: 8) {
+            Text(label).font(Theme.label(10.5, weight: .semibold)).frame(width: 30, alignment: .leading)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Theme.cream)
+                    Capsule()
+                        .fill(LinearGradient(colors: [Theme.butter, Theme.honey], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: max(8, geo.size.width * CGFloat(seconds / 3)))
+                        .opacity(highlighted ? 1 : 0.6)
+                }
+            }
+            .frame(height: highlighted ? 10 : 7)
         }
     }
 }
@@ -244,50 +334,70 @@ struct TrackpadTab: View {
     let model: AppModel
 
     var body: some View {
-        VStack(spacing: 14) {
-            Text("Touch the trackpad: dots show your fingers live. Use this to tune Sensitivity.")
-                .foregroundStyle(.secondary)
-            TrackpadCanvas(touches: model.engine.liveTouches, cornerSize: CGFloat(model.config.recognizer.cornerSize))
-                .aspectRatio(1.6, contentMode: .fit)
-                .frame(maxWidth: 520)
-            if let f = model.engine.lastFired {
-                Label("\(f.gesture.displayName) → \(f.action?.displayName ?? "no action")", systemImage: "checkmark.circle")
-                    .font(.headline)
-                if let source = f.source { Text("from \(source)").foregroundStyle(.secondary) }
-                if let e = f.error { Text(e).foregroundStyle(.red) }
-            } else {
-                Text("No gesture yet").foregroundStyle(.secondary)
+        VStack(spacing: 16) {
+            TabHeader(title: "Trackpad", subtitle: "Touch the trackpad: the liquid follows your fingers. Use it to tune Sensitivity.")
+            let touches = model.engine.liveTouches
+            let shape = RoundedRectangle(cornerRadius: Theme.radiusL, style: .continuous)
+            ZStack(alignment: .topLeading) {
+                shape.fill(.ultraThinMaterial)
+                shape.fill(Theme.warmWhite.opacity(0.85))
+                CornerZones(size: CGFloat(model.config.recognizer.cornerSize))
+                FluidLayer(touches: touches, fired: model.engine.lastFired?.date)
+                    .clipShape(shape)
+                shape.strokeBorder(.white, lineWidth: 1.5)
+                Chip(text: "\(touches.count) finger\(touches.count == 1 ? "" : "s")", systemImage: "hand.raised.fingers.spread.fill",
+                     tint: touches.isEmpty ? Theme.inkFaint : Theme.butter, foreground: Theme.ink)
+                    .padding(14)
+                    .animation(Theme.snappy, value: touches.count)
             }
+            .aspectRatio(1.6, contentMode: .fit)
+            .frame(maxWidth: 560)
+            .shadow(color: Theme.honey.opacity(0.2), radius: 24, y: 10)
+
+            ZStack {
+                if let f = model.engine.lastFired {
+                    GlassCard(padding: 12, radius: Theme.radiusS) {
+                        HStack(spacing: 12) {
+                            SymbolTile(symbol: f.gesture.symbol, size: 36)
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text(f.gesture.displayName).font(Theme.label(14, weight: .semibold))
+                                    Image(systemName: "arrow.right").font(.system(size: 10, weight: .bold)).foregroundStyle(Theme.honey)
+                                    Text(f.action?.displayName ?? "no action").font(Theme.label(14, weight: .regular))
+                                }
+                                if let source = f.source { Text("from \(source)").font(Theme.label(11.5, weight: .regular)).foregroundStyle(Theme.inkMuted) }
+                                if let e = f.error { Text(e).font(Theme.label(11.5)).foregroundStyle(Theme.warning) }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: 560)
+                    .id(f.date)
+                    .transition(.scale(scale: 0.85).combined(with: .opacity))
+                } else {
+                    Text("No gesture yet. Try a three-finger tap.").font(Theme.label(13, weight: .regular)).foregroundStyle(Theme.inkMuted)
+                }
+            }
+            .animation(Theme.wobble, value: model.engine.lastFired?.date)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 
-struct TrackpadCanvas: View {
-    var touches: [Touch]
-    var cornerSize: CGFloat
+/// The four corner-tap zones, drawn faintly on the pad.
+struct CornerZones: View {
+    var size: CGFloat
 
     var body: some View {
-        Canvas { ctx, size in
-            let pad = CGRect(origin: .zero, size: size)
-            ctx.fill(Path(roundedRect: pad, cornerRadius: 18), with: .color(.secondary.opacity(0.12)))
-            ctx.stroke(Path(roundedRect: pad, cornerRadius: 18), with: .color(.secondary.opacity(0.4)), lineWidth: 1)
-            // Corner zones.
-            let cw = size.width * cornerSize, ch = size.height * cornerSize
-            for (x, y) in [(0, 0), (size.width - cw, 0), (0, size.height - ch), (size.width - cw, size.height - ch)] {
-                ctx.fill(Path(roundedRect: CGRect(x: x, y: y, width: cw, height: ch), cornerRadius: 10),
-                         with: .color(.accentColor.opacity(0.08)))
+        GeometryReader { geo in
+            let cw = geo.size.width * size, ch = geo.size.height * size
+            ForEach(0..<4) { i in
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Theme.honey.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.butter.opacity(0.12)))
+                    .frame(width: cw, height: ch)
+                    .position(x: i % 2 == 0 ? cw / 2 + 8 : geo.size.width - cw / 2 - 8,
+                              y: i < 2 ? ch / 2 + 8 : geo.size.height - ch / 2 - 8)
             }
-            for t in touches {
-                // Touch y origin is bottom-left; Canvas origin is top-left.
-                let c = CGPoint(x: CGFloat(t.x) * size.width, y: (1 - CGFloat(t.y)) * size.height)
-                let r: CGFloat = 18
-                ctx.fill(Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)),
-                         with: .color(.accentColor.opacity(0.85)))
-            }
-        }
-        .overlay(alignment: .topLeading) {
-            Text("\(touches.count) finger\(touches.count == 1 ? "" : "s")").font(.caption).padding(10).foregroundStyle(.secondary)
         }
     }
 }
