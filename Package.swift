@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "TouchInput", targets: ["TouchInput"]),
+        .library(name: "Recognizer", targets: ["Recognizer"]),
         .executable(name: "tapdeck-spike", targets: ["tapdeck-spike"]),
     ],
     targets: [
@@ -13,6 +14,9 @@ let package = Package(
         // Types only: the symbols are resolved at runtime with dlopen/dlsym.
         .target(name: "CMultitouch"),
         .target(name: "TouchInput", dependencies: ["CMultitouch"]),
-        .executableTarget(name: "tapdeck-spike", dependencies: ["TouchInput"]),
+        // Pure gesture state machine: no OS calls, fully unit-testable.
+        .target(name: "Recognizer", dependencies: ["TouchInput"]),
+        .executableTarget(name: "tapdeck-spike", dependencies: ["TouchInput", "Recognizer"]),
+        .testTarget(name: "RecognizerTests", dependencies: ["Recognizer"]),
     ]
 )
