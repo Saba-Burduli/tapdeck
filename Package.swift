@@ -26,5 +26,7 @@ let package = Package(
         // Saved bindings and settings (JSON in Application Support).
         .target(name: "Config", dependencies: ["Actions", "Recognizer"]),
         .testTarget(name: "ConfigTests", dependencies: ["Config"]),
+        // Runtime pipeline: trackpad + clicks -> recognizer -> actions.
+        .target(name: "Engine", dependencies: ["TouchInput", "Recognizer", "Actions", "Config"]),
     ]
 )
