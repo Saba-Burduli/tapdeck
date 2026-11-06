@@ -5,8 +5,9 @@
 #   scripts/build-app.sh --run      build, quit any running TapDeck, launch the new one
 #   scripts/build-app.sh --debug    debug build (faster to compile)
 #
-# Signs with the local "TapDeck Dev" certificate when present, so macOS keeps the
-# Accessibility permission across rebuilds; otherwise signs ad-hoc.
+# Signs with $SIGN_IDENTITY if set (release builds), else the local "TapDeck Dev"
+# certificate when present, so macOS keeps the Accessibility permission across
+# rebuilds; otherwise ad-hoc.
 set -euo pipefail
 cd "${0:A:h}/.."
 
@@ -54,13 +55,17 @@ cat > "$app/Contents/Info.plist" <<PLIST
 PLIST
 
 identities=$(security find-identity -p codesigning)   # not piped: grep -q + pipefail = SIGPIPE
-if [[ "$identities" == *'"TapDeck Dev"'* ]]; then
+if [[ -n "${SIGN_IDENTITY:-}" ]]; then
+  identity="$SIGN_IDENTITY"   # e.g. "Developer ID Application: Name (TEAMID)" for releases
+elif [[ "$identities" == *'"TapDeck Dev"'* ]]; then
   identity="TapDeck Dev"
 else
   identity="-"
   echo "note: no 'TapDeck Dev' certificate; signing ad-hoc (Accessibility resets each rebuild)" >&2
 fi
-codesign --force --options runtime --sign "$identity" --identifier "$bundle_id" "$app"
+timestamp=()
+[[ "$identity" == Developer\ ID* ]] && timestamp=(--timestamp)   # required for notarization
+codesign --force --options runtime "${timestamp[@]}" --sign "$identity" --identifier "$bundle_id" "$app"
 echo "Built $app ($config, signed: $identity)"
 
 if $run; then
