@@ -20,43 +20,76 @@ struct BindingEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(isNew ? "New Shortcut" : "Edit Shortcut").font(.title2.bold())
-
-            GroupBox("When I…") {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Text(recording ? "Do the gesture on your trackpad now…" : draft.gesture.displayName)
-                            .font(.headline)
-                            .foregroundStyle(recording ? .orange : .primary)
-                        Spacer()
-                        Button(recording ? "Cancel" : "Record Gesture") { toggleRecording() }
-                    }
-                    GesturePicker(gesture: $draft.gesture).disabled(recording)
-                    if model.config.bindings.contains(where: { $0.id != draft.id && $0.enabled && $0.gesture == draft.gesture }) {
-                        Label("Another shortcut already uses this gesture.", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange).font(.callout)
-                    }
-                }
-                .padding(6)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                SymbolTile(symbol: draft.gesture.symbol, active: true, size: 40)
+                Text(isNew ? "New shortcut" : "Edit shortcut").font(Theme.title(22))
             }
 
-            GroupBox("…TapDeck will") {
-                ActionPicker(action: $draft.action).padding(6)
+            section("When I…", step: 1) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        if recording { ListeningRing() }
+                        Text(recording ? "Do the gesture on your trackpad now…" : draft.gesture.displayName)
+                            .font(Theme.label(15, weight: .semibold))
+                            .foregroundStyle(recording ? Theme.warning : Theme.ink)
+                            .contentTransition(.opacity)
+                        Spacer()
+                        Button(recording ? "Cancel" : "Record Gesture") { toggleRecording() }
+                            .buttonStyle(PillButtonStyle(primary: !recording))
+                    }
+                    .animation(Theme.snappy, value: recording)
+                    GesturePicker(gesture: $draft.gesture).disabled(recording)
+                    if model.config.bindings.contains(where: { $0.id != draft.id && $0.enabled && $0.gesture == draft.gesture && AppConfig.scopesOverlap($0.apps, draft.apps) }) {
+                        Label("Another of your shortcuts already uses this gesture in the same apps.", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Theme.warning).font(Theme.label(12))
+                    }
+                }
+            }
+
+            section("…TapDeck will", step: 2) {
+                ActionPicker(action: $draft.action)
+            }
+
+            section("Works in", step: 3) {
+                AppScopePicker(apps: $draft.apps)
             }
 
             HStack {
-                Toggle("Enabled", isOn: $draft.enabled)
+                Toggle(isOn: $draft.enabled) { Text("Enabled").font(Theme.label(13, weight: .semibold)) }
+                    .toggleStyle(LiquidToggleStyle())
+                    .fixedSize()
                 Spacer()
                 Button("Cancel", role: .cancel) { stopRecording(); done(nil) }
+                    .buttonStyle(PillButtonStyle(primary: false))
                     .keyboardShortcut(.cancelAction)
                 Button(isNew ? "Add" : "Save") { stopRecording(); done(draft) }
+                    .buttonStyle(PillButtonStyle())
                     .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(20)
-        .frame(width: 520)
+        .padding(22)
+        .frame(width: 540)
+        .background(Theme.milk)
+        .tint(Theme.honey)
+        .foregroundStyle(Theme.ink)
+        .preferredColorScheme(.light)
         .onDisappear { stopRecording() }
+    }
+
+    private func section<Content: View>(_ title: String, step: Int, @ViewBuilder content: () -> Content) -> some View {
+        GlassCard(padding: 14, radius: Theme.radiusS) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Text("\(step)")
+                        .font(Theme.label(11, weight: .bold))
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(Theme.butter))
+                    Text(title).font(Theme.label(13, weight: .semibold)).foregroundStyle(Theme.inkMuted)
+                }
+                content()
+            }
+        }
     }
 
     private func toggleRecording() {
@@ -201,6 +234,25 @@ struct ActionPicker: View {
     }
 }
 
+/// Honey rings pulsing outwards while TapDeck waits for a gesture.
+struct ListeningRing: View {
+    @State private var on = false
+
+    var body: some View {
+        ZStack {
+            ForEach(0..<2) { i in
+                Circle().stroke(Theme.honey, lineWidth: 2)
+                    .scaleEffect(on ? 1.8 : 0.6)
+                    .opacity(on ? 0 : 0.9)
+                    .animation(.easeOut(duration: 1.2).repeatForever(autoreverses: false).delay(Double(i) * 0.6), value: on)
+            }
+            Circle().fill(Theme.honey).frame(width: 8, height: 8)
+        }
+        .frame(width: 22, height: 22)
+        .onAppear { on = true }
+    }
+}
+
 /// Click, then press a key combination to capture it.
 struct KeyRecorder: View {
     @SwiftUI.Binding var combo: KeyCombo
@@ -244,5 +296,51 @@ struct KeyRecorder: View {
         if f.contains(.option) { m.insert(.option) }
         if f.contains(.control) { m.insert(.control) }
         return m
+    }
+}
+
+/// Everywhere, or only while one of the chosen apps is in front.
+struct AppScopePicker: View {
+    @SwiftUI.Binding var apps: [String]
+    @State private var onlySome = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("", selection: $onlySome) {
+                Text("Every app").tag(false)
+                Text("Only these apps").tag(true)
+            }
+            .pickerStyle(.segmented).labelsHidden()
+            .onChange(of: onlySome) { _, some in if !some { apps = [] } }
+
+            if onlySome {
+                ForEach(apps, id: \.self) { id in
+                    HStack {
+                        if let icon = AppInfo.icon(for: id) { Image(nsImage: icon).resizable().frame(width: 20, height: 20) }
+                        Text(AppInfo.name(for: id))
+                        Spacer()
+                        Button { apps.removeAll { $0 == id } } label: { Image(systemName: "minus.circle") }
+                            .buttonStyle(.borderless)
+                    }
+                }
+                Button("Add App…") { addApp() }
+                if apps.isEmpty {
+                    Text("Add at least one app, or choose Every app.").font(.callout).foregroundStyle(.orange)
+                }
+            }
+        }
+        .onAppear { onlySome = !apps.isEmpty }
+    }
+
+    private func addApp() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowsMultipleSelection = true
+        panel.prompt = "Add"
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls {
+            if let id = Bundle(url: url)?.bundleIdentifier, !apps.contains(id) { apps.append(id) }
+        }
     }
 }

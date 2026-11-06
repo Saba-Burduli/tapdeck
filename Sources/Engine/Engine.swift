@@ -1,4 +1,5 @@
 import Actions
+import AppKit
 import Config
 import Foundation
 import Observation
@@ -15,6 +16,8 @@ public final class Engine {
     public struct Fired: Equatable, Sendable {
         public var gesture: Gesture
         public var action: Action?
+        /// "My shortcut" or the pack's name.
+        public var source: String?
         public var error: String?
         public var date: Date
     }
@@ -30,9 +33,16 @@ public final class Engine {
         didSet { core.setWantsTouches(showsLiveTouches); if !showsLiveTouches { liveTouches = [] } }
     }
 
+    #if DEBUG
+    /// Feeds synthetic fingers to the visualizer, for screenshots without a real hand on the pad.
+    public func injectLiveTouches(_ touches: [Touch]) { liveTouches = touches }
+    #endif
+
     public var config: AppConfig {
-        didSet { core.apply(config, recording: recorder != nil) }
+        didSet { rearm() }
     }
+    /// Bundle ID of the frontmost app; app-specific shortcuts and packs follow it.
+    public private(set) var frontApp: String? = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
 
     @ObservationIgnored private let core = Core()
     @ObservationIgnored private let touches = MultitouchSource()
@@ -41,10 +51,17 @@ public final class Engine {
     @ObservationIgnored private var tickWork: DispatchWorkItem?
     @ObservationIgnored private var permissionTimer: Timer?
     @ObservationIgnored private var recorder: ((Gesture) -> Void)?
+    @ObservationIgnored private var appObserver: NSObjectProtocol?
 
     public init(config: AppConfig) {
         self.config = config
-        core.apply(config, recording: false)
+        rearm()
+    }
+
+    /// Tells the recognizer which gestures are live for the current app, so a
+    /// tap only waits for a double tap when one is bound right here.
+    private func rearm() {
+        core.apply(config, bound: recorder != nil ? nil : Set(config.activeBindings(frontApp: frontApp).keys))
     }
 
     public func start() {
@@ -71,6 +88,16 @@ public final class Engine {
         }
         isRunning = true
         startError = nil
+        appObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let id = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
+            MainActor.assumeIsolated {
+                guard let self, self.frontApp != id else { return }
+                self.frontApp = id
+                self.rearm()
+            }
+        }
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.accessibilityTrusted = Permissions.isAccessibilityTrusted }
         }
@@ -81,6 +108,8 @@ public final class Engine {
         clicks.stop()
         tickWork?.cancel()
         permissionTimer?.invalidate()
+        if let appObserver { NSWorkspace.shared.notificationCenter.removeObserver(appObserver) }
+        appObserver = nil
         isRunning = false
     }
 
@@ -88,12 +117,12 @@ public final class Engine {
     /// While recording, every gesture counts as bound, so multi-taps are captured whole.
     public func recordNextGesture(_ handler: @escaping (Gesture) -> Void) {
         recorder = handler
-        core.apply(config, recording: true)
+        rearm()
     }
 
     public func cancelRecording() {
         recorder = nil
-        core.apply(config, recording: false)
+        rearm()
     }
 
     public func refreshPermissions() { accessibilityTrusted = Permissions.isAccessibilityTrusted }
@@ -112,10 +141,16 @@ public final class Engine {
             recorder(gesture)
             return
         }
-        guard let action = config.activeBindings[gesture] else { return }
+        // Ask for the frontmost app now rather than trusting the last notification.
+        let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? frontApp
+        guard let (action, source) = config.resolved(frontApp: front)[gesture] else { return }
         var failure: String?
         do { try runner.run(action) } catch { failure = "\(error)" }
-        lastFired = Fired(gesture: gesture, action: action, error: failure, date: Date())
+        let from: String = switch source {
+        case .mine: "My shortcut"
+        case let .pack(_, name): name
+        }
+        lastFired = Fired(gesture: gesture, action: action, source: from, error: failure, date: Date())
     }
 
     /// One-shot timer for the earliest pending multi-tap; no polling while idle.
@@ -147,10 +182,11 @@ final class Core: @unchecked Sendable {
         lock.withLock { ProcessInfo.processInfo.systemUptime - (clockOffset ?? 0) }
     }
 
-    func apply(_ config: AppConfig, recording: Bool) {
+    /// `bound` = gestures with an action right now; nil while recording a gesture.
+    func apply(_ config: AppConfig, bound: Set<Gesture>?) {
         lock.withLock {
             recognizerConfig = config.recognizer
-            bound = recording ? nil : Set(config.activeBindings.keys)
+            self.bound = bound
             for d in recognizers.keys {
                 recognizers[d]?.config = recognizerConfig
                 recognizers[d]?.bound = bound
@@ -167,9 +203,9 @@ final class Core: @unchecked Sendable {
             let events = r.process(frame)
             recognizers[frame.device] = r
             var live: [Touch]?
-            // Visualizer: at most ~30 updates per second, plus the final "all lifted" frame.
+            // Visualizer: at most ~60 updates per second, plus the final "all lifted" frame.
             let down = frame.touches.filter(\.state.isDown)
-            if wantsTouches, frame.timestamp - lastLiveSent > 1.0 / 30 || down.isEmpty {
+            if wantsTouches, frame.timestamp - lastLiveSent > 1.0 / 60 || down.isEmpty {
                 live = down
                 lastLiveSent = frame.timestamp
             }
