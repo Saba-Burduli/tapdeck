@@ -10,8 +10,10 @@ struct SettingsView: View {
 
     var body: some View {
         TabView(selection: $model.selectedTab) {
+            PacksTab(model: model)
+                .tabItem { Label("Packs", systemImage: "square.stack.3d.up") }.tag(SettingsTab.packs)
             ShortcutsTab(model: model)
-                .tabItem { Label("Shortcuts", systemImage: "hand.tap") }.tag(SettingsTab.shortcuts)
+                .tabItem { Label("My Shortcuts", systemImage: "hand.tap") }.tag(SettingsTab.shortcuts)
             SensitivityTab(model: model)
                 .tabItem { Label("Sensitivity", systemImage: "slider.horizontal.3") }.tag(SettingsTab.sensitivity)
             TrackpadTab(model: model)
@@ -42,7 +44,7 @@ struct ShortcutsTab: View {
             }
             List {
                 ForEach($model.config.bindings) { $b in
-                    BindingRow(binding: $b, conflict: model.config.conflicts.contains(b.gesture))
+                    BindingRow(binding: $b, conflict: model.config.conflicts.contains(b.id))
                         .contentShape(Rectangle())
                         .onTapGesture(count: 2) { isNew = false; editing = b }
                         .contextMenu {
@@ -62,7 +64,7 @@ struct ShortcutsTab: View {
                 Button("Edit…") { isNew = false; editing = selectedOrFirst }
                     .disabled(model.config.bindings.isEmpty)
                 Spacer()
-                Text("Double-click a row to edit. Right-click to delete.").font(.callout).foregroundStyle(.secondary)
+                Text("Your shortcuts win over packs. Double-click to edit, right-click to delete.").font(.callout).foregroundStyle(.secondary)
             }
         }
         .sheet(item: $editing) { b in
@@ -97,10 +99,11 @@ struct BindingRow: View {
             }
             Text(binding.action.displayName)
             Spacer()
+            ScopeLabel(apps: binding.apps)
             if conflict {
                 Label("Duplicate gesture", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange).font(.callout)
-                    .help("Another enabled shortcut uses this gesture; only the first one runs.")
+                    .help("Another of your shortcuts uses this gesture in the same apps; only the first one runs.")
             }
         }
         .opacity(binding.enabled ? 1 : 0.5)
@@ -172,6 +175,7 @@ struct TrackpadTab: View {
             if let f = model.engine.lastFired {
                 Label("\(f.gesture.displayName) → \(f.action?.displayName ?? "no action")", systemImage: "checkmark.circle")
                     .font(.headline)
+                if let source = f.source { Text("from \(source)").foregroundStyle(.secondary) }
                 if let e = f.error { Text(e).foregroundStyle(.red) }
             } else {
                 Text("No gesture yet").foregroundStyle(.secondary)

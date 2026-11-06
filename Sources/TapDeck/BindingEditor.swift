@@ -33,8 +33,8 @@ struct BindingEditor: View {
                         Button(recording ? "Cancel" : "Record Gesture") { toggleRecording() }
                     }
                     GesturePicker(gesture: $draft.gesture).disabled(recording)
-                    if model.config.bindings.contains(where: { $0.id != draft.id && $0.enabled && $0.gesture == draft.gesture }) {
-                        Label("Another shortcut already uses this gesture.", systemImage: "exclamationmark.triangle.fill")
+                    if model.config.bindings.contains(where: { $0.id != draft.id && $0.enabled && $0.gesture == draft.gesture && AppConfig.scopesOverlap($0.apps, draft.apps) }) {
+                        Label("Another of your shortcuts already uses this gesture in the same apps.", systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange).font(.callout)
                     }
                 }
@@ -43,6 +43,10 @@ struct BindingEditor: View {
 
             GroupBox("…TapDeck will") {
                 ActionPicker(action: $draft.action).padding(6)
+            }
+
+            GroupBox("Works in") {
+                AppScopePicker(apps: $draft.apps).padding(6)
             }
 
             HStack {
@@ -244,5 +248,51 @@ struct KeyRecorder: View {
         if f.contains(.option) { m.insert(.option) }
         if f.contains(.control) { m.insert(.control) }
         return m
+    }
+}
+
+/// Everywhere, or only while one of the chosen apps is in front.
+struct AppScopePicker: View {
+    @SwiftUI.Binding var apps: [String]
+    @State private var onlySome = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("", selection: $onlySome) {
+                Text("Every app").tag(false)
+                Text("Only these apps").tag(true)
+            }
+            .pickerStyle(.segmented).labelsHidden()
+            .onChange(of: onlySome) { _, some in if !some { apps = [] } }
+
+            if onlySome {
+                ForEach(apps, id: \.self) { id in
+                    HStack {
+                        if let icon = AppInfo.icon(for: id) { Image(nsImage: icon).resizable().frame(width: 20, height: 20) }
+                        Text(AppInfo.name(for: id))
+                        Spacer()
+                        Button { apps.removeAll { $0 == id } } label: { Image(systemName: "minus.circle") }
+                            .buttonStyle(.borderless)
+                    }
+                }
+                Button("Add App…") { addApp() }
+                if apps.isEmpty {
+                    Text("Add at least one app, or choose Every app.").font(.callout).foregroundStyle(.orange)
+                }
+            }
+        }
+        .onAppear { onlySome = !apps.isEmpty }
+    }
+
+    private func addApp() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowsMultipleSelection = true
+        panel.prompt = "Add"
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls {
+            if let id = Bundle(url: url)?.bundleIdentifier, !apps.contains(id) { apps.append(id) }
+        }
     }
 }

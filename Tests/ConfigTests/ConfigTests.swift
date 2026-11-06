@@ -37,19 +37,17 @@ import Testing
             Binding(gesture: .tap(fingers: 3, count: 1), action: .media(.mute)),
             Binding(gesture: .tap(fingers: 4, count: 1), action: .media(.next), enabled: false),
         ])
-        #expect(c.activeBindings == [.tap(fingers: 3, count: 1): .media(.mute)])
+        #expect(c.activeBindings(frontApp: nil) == [.tap(fingers: 3, count: 1): .media(.mute)])
         c.isEnabled = false
-        #expect(c.activeBindings.isEmpty)
+        #expect(c.activeBindings(frontApp: nil).isEmpty)
     }
 
     @Test func duplicateGesturesAreReportedAndFirstWins() {
         let g = Gesture.tap(fingers: 3, count: 2)
-        let c = AppConfig(bindings: [
-            Binding(gesture: g, action: .media(.mute)),
-            Binding(gesture: g, action: .media(.next)),
-        ])
-        #expect(c.conflicts == [g])
-        #expect(c.activeBindings[g] == .media(.mute))
+        let second = Binding(gesture: g, action: .media(.next))
+        let c = AppConfig(bindings: [Binding(gesture: g, action: .media(.mute)), second])
+        #expect(c.conflicts == [second.id])
+        #expect(c.activeBindings(frontApp: nil)[g] == .media(.mute))
     }
 
     @Test func starterHasNoConflicts() {

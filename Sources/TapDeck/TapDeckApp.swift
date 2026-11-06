@@ -20,7 +20,7 @@ struct TapDeckApp: App {
     }
 }
 
-enum SettingsTab: Hashable { case shortcuts, sensitivity, trackpad, general }
+enum SettingsTab: Hashable { case packs, shortcuts, sensitivity, trackpad, general }
 
 /// App-wide state: the engine, persistence, and the Settings window.
 @MainActor @Observable
@@ -28,7 +28,7 @@ final class AppModel {
     let engine: Engine
     private let store = ConfigStore.standard
     var saveError: String?
-    var selectedTab: SettingsTab = .shortcuts
+    var selectedTab: SettingsTab = .packs
 
     @ObservationIgnored private var settingsWindow: NSWindow?
 
@@ -100,9 +100,11 @@ struct MenuContent: View {
         }
         if let f = model.engine.lastFired {
             Text("Last: \(f.gesture.displayName) → \(f.action?.displayName ?? "–")\(f.error == nil ? "" : " (failed)")")
+            if let source = f.source { Text("   from \(source)") }
         }
 
         Divider()
+        Button("Shortcut Packs…") { model.showSettings(.packs) }
         Button("Settings…") { model.showSettings() }
             .keyboardShortcut(",")
         Button("Quit TapDeck") { NSApp.terminate(nil) }
