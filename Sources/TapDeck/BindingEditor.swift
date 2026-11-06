@@ -20,47 +20,76 @@ struct BindingEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(isNew ? "New Shortcut" : "Edit Shortcut").font(.title2.bold())
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                SymbolTile(symbol: draft.gesture.symbol, active: true, size: 40)
+                Text(isNew ? "New shortcut" : "Edit shortcut").font(Theme.title(22))
+            }
 
-            GroupBox("When I…") {
+            section("When I…", step: 1) {
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack {
+                    HStack(spacing: 10) {
+                        if recording { ListeningRing() }
                         Text(recording ? "Do the gesture on your trackpad now…" : draft.gesture.displayName)
-                            .font(.headline)
-                            .foregroundStyle(recording ? .orange : .primary)
+                            .font(Theme.label(15, weight: .semibold))
+                            .foregroundStyle(recording ? Theme.warning : Theme.ink)
+                            .contentTransition(.opacity)
                         Spacer()
                         Button(recording ? "Cancel" : "Record Gesture") { toggleRecording() }
+                            .buttonStyle(PillButtonStyle(primary: !recording))
                     }
+                    .animation(Theme.snappy, value: recording)
                     GesturePicker(gesture: $draft.gesture).disabled(recording)
                     if model.config.bindings.contains(where: { $0.id != draft.id && $0.enabled && $0.gesture == draft.gesture && AppConfig.scopesOverlap($0.apps, draft.apps) }) {
                         Label("Another of your shortcuts already uses this gesture in the same apps.", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange).font(.callout)
+                            .foregroundStyle(Theme.warning).font(Theme.label(12))
                     }
                 }
-                .padding(6)
             }
 
-            GroupBox("…TapDeck will") {
-                ActionPicker(action: $draft.action).padding(6)
+            section("…TapDeck will", step: 2) {
+                ActionPicker(action: $draft.action)
             }
 
-            GroupBox("Works in") {
-                AppScopePicker(apps: $draft.apps).padding(6)
+            section("Works in", step: 3) {
+                AppScopePicker(apps: $draft.apps)
             }
 
             HStack {
-                Toggle("Enabled", isOn: $draft.enabled)
+                Toggle(isOn: $draft.enabled) { Text("Enabled").font(Theme.label(13, weight: .semibold)) }
+                    .toggleStyle(LiquidToggleStyle())
+                    .fixedSize()
                 Spacer()
                 Button("Cancel", role: .cancel) { stopRecording(); done(nil) }
+                    .buttonStyle(PillButtonStyle(primary: false))
                     .keyboardShortcut(.cancelAction)
                 Button(isNew ? "Add" : "Save") { stopRecording(); done(draft) }
+                    .buttonStyle(PillButtonStyle())
                     .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(20)
-        .frame(width: 520)
+        .padding(22)
+        .frame(width: 540)
+        .background(Theme.milk)
+        .tint(Theme.honey)
+        .foregroundStyle(Theme.ink)
+        .preferredColorScheme(.light)
         .onDisappear { stopRecording() }
+    }
+
+    private func section<Content: View>(_ title: String, step: Int, @ViewBuilder content: () -> Content) -> some View {
+        GlassCard(padding: 14, radius: Theme.radiusS) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Text("\(step)")
+                        .font(Theme.label(11, weight: .bold))
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(Theme.butter))
+                    Text(title).font(Theme.label(13, weight: .semibold)).foregroundStyle(Theme.inkMuted)
+                }
+                content()
+            }
+        }
     }
 
     private func toggleRecording() {
@@ -202,6 +231,25 @@ struct ActionPicker: View {
         guard panel.runModal() == .OK, let url = panel.url,
               let id = Bundle(url: url)?.bundleIdentifier else { return }
         action = .openApp(bundleID: id, toggle: toggle)
+    }
+}
+
+/// Honey rings pulsing outwards while TapDeck waits for a gesture.
+struct ListeningRing: View {
+    @State private var on = false
+
+    var body: some View {
+        ZStack {
+            ForEach(0..<2) { i in
+                Circle().stroke(Theme.honey, lineWidth: 2)
+                    .scaleEffect(on ? 1.8 : 0.6)
+                    .opacity(on ? 0 : 0.9)
+                    .animation(.easeOut(duration: 1.2).repeatForever(autoreverses: false).delay(Double(i) * 0.6), value: on)
+            }
+            Circle().fill(Theme.honey).frame(width: 8, height: 8)
+        }
+        .frame(width: 22, height: 22)
+        .onAppear { on = true }
     }
 }
 

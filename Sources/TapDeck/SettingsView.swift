@@ -63,35 +63,59 @@ struct ShortcutsTab: View {
     @Bindable var model: AppModel
     @State private var editing: Binding?
     @State private var isNew = false
+    @State private var plusHover = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .bottom) {
+                TabHeader(title: "My shortcuts",
+                          subtitle: "Your own gestures. They win over packs. Double-click to edit, drag to reorder, right-click to delete.")
+                Button {
+                    isNew = true
+                    editing = Binding(gesture: .tap(fingers: 3, count: 1), action: .media(.playPause))
+                } label: {
+                    Label { Text("Add Shortcut") } icon: {
+                        Image(systemName: "plus").fontWeight(.bold).rotationEffect(.degrees(plusHover ? 90 : 0))
+                    }
+                }
+                .buttonStyle(PillButtonStyle())
+                .onHover { h in withAnimation(Theme.wobble) { plusHover = h } }
+                .fixedSize()
+            }
             if !model.engine.accessibilityTrusted {
                 PermissionBanner(model: model)
             }
-            List {
-                ForEach($model.config.bindings) { $b in
-                    BindingRow(binding: $b, conflict: model.config.conflicts.contains(b.id))
-                        .contentShape(Rectangle())
-                        .onTapGesture(count: 2) { isNew = false; editing = b }
-                        .contextMenu {
-                            Button("Edit…") { isNew = false; editing = b }
-                            Button("Delete", role: .destructive) { model.config.bindings.removeAll { $0.id == b.id } }
-                        }
+            if model.config.bindings.isEmpty {
+                GlassCard {
+                    VStack(spacing: 8) {
+                        SymbolTile(symbol: "hand.tap.fill", size: 48)
+                        Text("No shortcuts yet").font(Theme.title(16))
+                        Text("Add one, or switch on a pack to start with ready-made gestures.")
+                            .font(Theme.label(12.5, weight: .regular)).foregroundStyle(Theme.inkMuted)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 20)
                 }
-                .onDelete { model.config.bindings.remove(atOffsets: $0) }
-                .onMove { model.config.bindings.move(fromOffsets: $0, toOffset: $1) }
-            }
-            .listStyle(.inset(alternatesRowBackgrounds: true))
-
-            HStack {
-                Button { isNew = true; editing = Binding(gesture: .tap(fingers: 3, count: 1), action: .media(.playPause)) } label: {
-                    Label("Add Shortcut", systemImage: "plus")
+            } else {
+                List {
+                    ForEach($model.config.bindings) { $b in
+                        BindingRow(binding: $b, conflict: model.config.conflicts.contains(b.id))
+                            .contentShape(Rectangle())
+                            .onTapGesture(count: 2) { isNew = false; editing = b }
+                            .contextMenu {
+                                Button("Edit…") { isNew = false; editing = b }
+                                Button("Delete", role: .destructive) { model.config.bindings.removeAll { $0.id == b.id } }
+                            }
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                    }
+                    .onDelete { model.config.bindings.remove(atOffsets: $0) }
+                    .onMove { model.config.bindings.move(fromOffsets: $0, toOffset: $1) }
                 }
-                Button("Edit…") { isNew = false; editing = selectedOrFirst }
-                    .disabled(model.config.bindings.isEmpty)
-                Spacer()
-                Text("Your shortcuts win over packs. Double-click to edit, right-click to delete.").font(.callout).foregroundStyle(.secondary)
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .scrollIndicators(.never)
             }
         }
         .sheet(item: $editing) { b in
@@ -107,8 +131,6 @@ struct ShortcutsTab: View {
             }
         }
     }
-
-    private var selectedOrFirst: Binding? { model.config.bindings.first }
 }
 
 struct BindingRow: View {
@@ -116,25 +138,54 @@ struct BindingRow: View {
     var conflict: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
-            Toggle("", isOn: $binding.enabled).labelsHidden()
-            Image(systemName: binding.gesture.symbol).frame(width: 20)
-            Text(binding.gesture.displayName).frame(width: 190, alignment: .leading)
-            Image(systemName: "arrow.right").foregroundStyle(.secondary)
-            if case let .openApp(id, _) = binding.action, let icon = AppInfo.icon(for: id) {
-                Image(nsImage: icon).resizable().frame(width: 18, height: 18)
-            }
-            Text(binding.action.displayName)
-            Spacer()
-            ScopeLabel(apps: binding.apps)
-            if conflict {
-                Label("Duplicate gesture", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange).font(.callout)
-                    .help("Another of your shortcuts uses this gesture in the same apps; only the first one runs.")
+        GlassCard(padding: 12, radius: Theme.radiusS) {
+            HStack(spacing: 12) {
+                LiquidSwitch(isOn: $binding.enabled)
+                SymbolTile(symbol: binding.gesture.symbol, active: binding.enabled, size: 32)
+                Text(binding.gesture.displayName)
+                    .font(Theme.label(13, weight: .semibold))
+                    .frame(width: 170, alignment: .leading)
+                Image(systemName: "arrow.right").font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.honey)
+                if case let .openApp(id, _) = binding.action, let icon = AppInfo.icon(for: id) {
+                    Image(nsImage: icon).resizable().frame(width: 20, height: 20)
+                }
+                Text(binding.action.displayName).font(Theme.label(13, weight: .regular)).lineLimit(1)
+                Spacer(minLength: 6)
+                ScopeLabel(apps: binding.apps)
+                if conflict {
+                    Chip(text: "Duplicate", systemImage: "exclamationmark.triangle.fill",
+                         tint: Theme.warning.opacity(0.15), foreground: Theme.warning)
+                        .modifier(Shake(trigger: conflict))
+                        .help("Another of your shortcuts uses this gesture in the same apps; only the first one runs.")
+                }
             }
         }
-        .opacity(binding.enabled ? 1 : 0.5)
-        .padding(.vertical, 2)
+        .opacity(binding.enabled ? 1 : 0.6)
+        .animation(Theme.snappy, value: binding.enabled)
+    }
+}
+
+struct ShakeEffect: GeometryEffect {
+    var animatableData: CGFloat
+
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        ProjectionTransform(CGAffineTransform(translationX: sin(animatableData * .pi * 6) * 4 * (1 - animatableData), y: 0))
+    }
+}
+
+/// Shakes once when `trigger` turns on.
+struct Shake: ViewModifier {
+    var trigger: Bool
+    @State private var phase: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .modifier(ShakeEffect(animatableData: phase))
+            .onChange(of: trigger, initial: true) { _, on in
+                guard on else { return }
+                phase = 0
+                withAnimation(.easeOut(duration: 0.5)) { phase = 1 }
+            }
     }
 }
 
