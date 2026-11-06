@@ -9,23 +9,50 @@ struct SettingsView: View {
     @Bindable var model: AppModel
 
     var body: some View {
-        TabView(selection: $model.selectedTab) {
-            PacksTab(model: model)
-                .tabItem { Label("Packs", systemImage: "square.stack.3d.up") }.tag(SettingsTab.packs)
-            ShortcutsTab(model: model)
-                .tabItem { Label("My Shortcuts", systemImage: "hand.tap") }.tag(SettingsTab.shortcuts)
-            SensitivityTab(model: model)
-                .tabItem { Label("Sensitivity", systemImage: "slider.horizontal.3") }.tag(SettingsTab.sensitivity)
-            TrackpadTab(model: model)
-                .tabItem { Label("Trackpad", systemImage: "rectangle.and.hand.point.up.left") }.tag(SettingsTab.trackpad)
-            GeneralTab(model: model)
-                .tabItem { Label("General", systemImage: "gearshape") }.tag(SettingsTab.general)
-        }
-        .padding()
-        .safeAreaInset(edge: .bottom) {
-            if let e = model.saveError {
-                Text(e).foregroundStyle(.red).font(.callout).padding(.bottom, 6)
+        ZStack(alignment: .top) {
+            Theme.milk.ignoresSafeArea()
+            FluidLayer(touches: model.engine.liveTouches, fired: model.engine.lastFired?.date)
+                .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                TabBar(selection: $model.selectedTab)
+                    .padding(.top, 2)
+                ZStack {
+                    tabContent
+                        .id(model.selectedTab)
+                        .transition(.liquidTab)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.horizontal, 28)
+                .padding(.top, 18)
+                .padding(.bottom, 20)
             }
+        }
+        .overlay(alignment: .bottom) {
+            if let e = model.saveError {
+                Label(e, systemImage: "exclamationmark.triangle.fill")
+                    .font(Theme.label(12, weight: .semibold))
+                    .foregroundStyle(Theme.ink)
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(Capsule().fill(.ultraThinMaterial))
+                    .background(Capsule().fill(Theme.butter.opacity(0.6)))
+                    .padding(.bottom, 14)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(Theme.wobble, value: model.saveError)
+        .foregroundStyle(Theme.ink)
+        .tint(Theme.honey)
+        .preferredColorScheme(.light)
+    }
+
+    @ViewBuilder private var tabContent: some View {
+        switch model.selectedTab {
+        case .packs: PacksTab(model: model)
+        case .shortcuts: ShortcutsTab(model: model)
+        case .sensitivity: SensitivityTab(model: model)
+        case .trackpad: TrackpadTab(model: model)
+        case .general: GeneralTab(model: model)
         }
     }
 }

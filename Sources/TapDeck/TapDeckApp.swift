@@ -68,7 +68,11 @@ final class AppModel {
             window.titlebarAppearsTransparent = true
             window.isMovableByWindowBackground = true
             window.contentMinSize = NSSize(width: 720, height: 520)
-            window.contentViewController = NSHostingController(rootView: SettingsView(model: self))
+            let hosting = NSHostingController(rootView: SettingsView(model: self))
+            // Size the window ourselves; letting SwiftUI size it grows it to fit every pack.
+            hosting.sizingOptions = []
+            window.contentViewController = hosting
+            window.setContentSize(NSSize(width: 820, height: 580))
             window.isReleasedWhenClosed = false
             window.center()
             window.setFrameAutosaveName("TapDeckSettingsWindow")
