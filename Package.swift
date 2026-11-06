@@ -8,6 +8,7 @@ let package = Package(
         .library(name: "TouchInput", targets: ["TouchInput"]),
         .library(name: "Recognizer", targets: ["Recognizer"]),
         .library(name: "Actions", targets: ["Actions"]),
+        .library(name: "Config", targets: ["Config"]),
         .executable(name: "tapdeck-spike", targets: ["tapdeck-spike"]),
     ],
     targets: [
@@ -22,5 +23,8 @@ let package = Package(
         .executableTarget(name: "tapdeck-spike", dependencies: ["TouchInput", "Recognizer", "Actions"]),
         .testTarget(name: "RecognizerTests", dependencies: ["Recognizer"]),
         .testTarget(name: "ActionsTests", dependencies: ["Actions"]),
+        // Saved bindings and settings (JSON in Application Support).
+        .target(name: "Config", dependencies: ["Actions", "Recognizer"]),
+        .testTarget(name: "ConfigTests", dependencies: ["Config"]),
     ]
 )
