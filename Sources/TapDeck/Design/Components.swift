@@ -210,7 +210,7 @@ struct Chip: View {
     var body: some View {
         HStack(spacing: 4) {
             if let systemImage { Image(systemName: systemImage).font(.system(size: 9, weight: .bold)) }
-            Text(text)
+            Text(text).lineLimit(1).truncationMode(.middle)
         }
         .font(Theme.label(11, weight: .semibold))
         .padding(.horizontal, 8).padding(.vertical, 3)

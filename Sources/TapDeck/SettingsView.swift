@@ -11,9 +11,7 @@ struct SettingsView: View {
     var body: some View {
         ZStack(alignment: .top) {
             Theme.milk.ignoresSafeArea()
-            // On the Trackpad tab the pad shows the fingers; the window keeps only its ambient colour.
-            FluidLayer(touches: model.selectedTab == .trackpad ? [] : model.engine.liveTouches,
-                       fired: model.selectedTab == .trackpad ? nil : model.engine.lastFired?.date)
+            WindowFluid(model: model)
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
@@ -56,6 +54,17 @@ struct SettingsView: View {
         case .trackpad: TrackpadTab(model: model)
         case .general: GeneralTab(model: model)
         }
+    }
+}
+
+/// Reads the live touches in its own body, so 60 updates a second redraw only the liquid, not the tabs.
+struct WindowFluid: View {
+    let model: AppModel
+
+    var body: some View {
+        // On the Trackpad tab the pad shows the fingers; the window keeps only its ambient colour.
+        let onPad = model.selectedTab == .trackpad
+        FluidLayer(touches: onPad ? [] : model.engine.liveTouches, fired: onPad ? nil : model.engine.lastFired?.date)
     }
 }
 
@@ -336,23 +345,7 @@ struct TrackpadTab: View {
     var body: some View {
         VStack(spacing: 16) {
             TabHeader(title: "Trackpad", subtitle: "Touch the trackpad: the liquid follows your fingers. Use it to tune Sensitivity.")
-            let touches = model.engine.liveTouches
-            let shape = RoundedRectangle(cornerRadius: Theme.radiusL, style: .continuous)
-            ZStack(alignment: .topLeading) {
-                shape.fill(.ultraThinMaterial)
-                shape.fill(Theme.warmWhite.opacity(0.85))
-                CornerZones(size: CGFloat(model.config.recognizer.cornerSize))
-                FluidLayer(touches: touches, fired: model.engine.lastFired?.date)
-                    .clipShape(shape)
-                shape.strokeBorder(.white, lineWidth: 1.5)
-                Chip(text: "\(touches.count) finger\(touches.count == 1 ? "" : "s")", systemImage: "hand.raised.fingers.spread.fill",
-                     tint: touches.isEmpty ? Theme.inkFaint : Theme.butter, foreground: Theme.ink)
-                    .padding(14)
-                    .animation(Theme.snappy, value: touches.count)
-            }
-            .aspectRatio(1.6, contentMode: .fit)
-            .frame(maxWidth: 560)
-            .shadow(color: Theme.honey.opacity(0.2), radius: 24, y: 10)
+            PadStage(model: model)
 
             ZStack {
                 if let f = model.engine.lastFired {
@@ -380,6 +373,31 @@ struct TrackpadTab: View {
             .animation(Theme.wobble, value: model.engine.lastFired?.date)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
+/// The big pad with its own liquid. Reads the live touches itself, like ``WindowFluid``.
+struct PadStage: View {
+    let model: AppModel
+
+    var body: some View {
+        let touches = model.engine.liveTouches
+        let shape = RoundedRectangle(cornerRadius: Theme.radiusL, style: .continuous)
+        ZStack(alignment: .topLeading) {
+            shape.fill(.ultraThinMaterial)
+            shape.fill(Theme.warmWhite.opacity(0.85))
+            CornerZones(size: CGFloat(model.config.recognizer.cornerSize))
+            FluidLayer(touches: touches, fired: model.engine.lastFired?.date)
+                .clipShape(shape)
+            shape.strokeBorder(.white, lineWidth: 1.5)
+            Chip(text: "\(touches.count) finger\(touches.count == 1 ? "" : "s")", systemImage: "hand.raised.fingers.spread.fill",
+                 tint: touches.isEmpty ? Theme.inkFaint : Theme.butter, foreground: Theme.ink)
+                .padding(14)
+                .animation(Theme.snappy, value: touches.count)
+        }
+        .aspectRatio(1.6, contentMode: .fit)
+        .frame(maxWidth: 560)
+        .shadow(color: Theme.honey.opacity(0.2), radius: 24, y: 10)
     }
 }
 

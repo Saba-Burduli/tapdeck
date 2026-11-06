@@ -20,7 +20,7 @@ final class FluidSim {
         var age: Double = 0
     }
 
-    static let maxParticles = 350
+    static let maxParticles = 260
     static let rippleLife = 0.7
 
     private(set) var particles: [Particle] = []
@@ -129,6 +129,8 @@ struct FluidLayer: View {
                 drawFingers(&ctx, size: size)
             }
         }
+        // Rasterize on the GPU; blurring on the CPU costs several times more.
+        .drawingGroup()
         .allowsHitTesting(false)
         .onChange(of: touches.isEmpty, initial: true) { _, empty in
             settleTask?.cancel()
@@ -177,7 +179,13 @@ struct FluidLayer: View {
 
     private func drawLiquid(_ ctx: inout GraphicsContext, color: Color, radiusScale: CGFloat, offset: CGSize, blur: CGFloat = 12) {
         guard !sim.particles.isEmpty else { return }
+        // Blur cost grows with area, so filter only the region the drops cover.
+        var bounds = CGRect.null
+        for p in sim.particles {
+            bounds = bounds.union(CGRect(x: p.position.x - p.radius, y: p.position.y - p.radius, width: p.radius * 2, height: p.radius * 2))
+        }
         ctx.drawLayer { layer in
+            layer.clip(to: Path(bounds.insetBy(dx: -blur * 3, dy: -blur * 3)))
             layer.addFilter(.alphaThreshold(min: 0.5, color: color))
             layer.addFilter(.blur(radius: blur))
             layer.drawLayer { drops in
